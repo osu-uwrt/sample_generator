@@ -5,6 +5,7 @@
 # provided by the dome.
 
 import visii
+from random import *
 
 opt = lambda: None
 opt.spp = 50 
@@ -72,7 +73,11 @@ sphere = visii.entity.create(
     transform = visii.transform.create("sphere"),
     material = visii.material.create("sphere")
 )
-sphere.get_transform().set_position((0,0,0.41))
+sphere.get_transform().set_position((
+        uniform(-5,5),
+        uniform(-5,5),
+        uniform(-1,3)
+    ))
 sphere.get_transform().set_scale((0.4, 0.4, 0.4))
 sphere.get_material().set_base_color((0.1,0.9,0.08))  
 sphere.get_material().set_roughness(0.7)   
@@ -85,5 +90,10 @@ for i in range(opt.nb_frames):
         samples_per_pixel = opt.spp,   
         file_path = 'data/garlic' + str(i) + '.png'
     )
+    sphere.get_transform().set_position((
+        uniform(-5,5),
+        uniform(-5,5),
+        uniform(-1,3)
+    ))
 
 visii.deinitialize()
