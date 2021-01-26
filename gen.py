@@ -7,11 +7,11 @@ from random import *
 import colorsys
 
 opt = lambda: None
-opt.nb_objs = 10000 
+opt.nb_objs = 100 
 opt.spp = 16 
 opt.width = 1920
 opt.height = 1080 
-opt.out = '02_random_scene.png'
+opt.out = 'data/02_random_scene.png'
 
 # visii uses sets of components to represent a scene. 
 # We can increase the max component limit here if necessary.
