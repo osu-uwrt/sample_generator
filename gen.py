@@ -1,156 +1,89 @@
-# gen.py
+# 01.simple_scene.py
 #
-# produce 100 captures of garlic with some pose randomization
+# This shows a sphere on top of a mirror floor. 
+# You should see how to set up a simple scene with visii, where light is
+# provided by the dome.
 
 import visii
-from random import *
-import colorsys
 
 opt = lambda: None
-opt.nb_objs = 100 
-opt.spp = 16 
-opt.width = 1920
-opt.height = 1080 
-opt.out = 'data/02_random_scene.png'
+opt.spp = 50 
+opt.width = 512
+opt.height = 512 
+opt.nb_frames = 10
+opt.out = '01_simple_scene.png'
 
-# visii uses sets of components to represent a scene. 
-# We can increase the max component limit here if necessary.
-# In this case, we'll need 16 meshes, a material for each object,
-# and finally a transform for each object as well as one more for the camera.
-visii.initialize(
-    headless = True, 
-    verbose = True, 
-    lazy_updates = True,
-    max_entities = opt.nb_objs + 1,
-    max_transforms = opt.nb_objs + 1,  
-    max_materials = opt.nb_objs,
-    max_meshes = 16
-    # these are also available
-    # max_lights, max_textures, & max_cameras
-)
+# headless - no window
+# verbose - output number of frames rendered, etc..
+visii.initialize(headless = True, verbose = True)
 
-# Turn on the denoiser
+# Use a neural network to denoise ray traced
 visii.enable_denoiser()
 
-# Create a camera
-camera = visii.entity.create(
-    name = "camera",
-    transform = visii.transform.create("camera"),
-    camera = visii.camera.create(
-        name = "camera",  
-        aspect = float(opt.width)/float(opt.height)
+# First, lets create an entity that will serve as our camera.
+camera = visii.entity.create(name = "camera")
+
+# To place the camera into our scene, we'll add a "transform" component.
+# (All visii objects have a "name" that can be used for easy lookup later.)
+camera.set_transform(visii.transform.create(name = "camera_transform"))
+
+# To make our camera entity act like a "camera", we'll add a camera component
+camera.set_camera(
+    visii.camera.create_from_fov(
+        name = "camera_camera", 
+        field_of_view = 0.785398, # note, this is in radians
+        aspect = opt.width / float(opt.height)
     )
 )
-camera.get_transform().look_at(at = (0,0,0), up = (1,0,0), eye = (0,0,5))
+
+# Finally, we'll select this entity to be the current camera entity.
+# (visii can only use one camera at the time)
 visii.set_camera_entity(camera)
 
-# Lets create a random scene. 
+# Lets set the camera to look at an object. 
+# We'll do this by editing the transform component.
+camera.get_transform().look_at(at = (0, 0, .9), up = (0, 0, 1), eye = (0, 5, 1))
 
-# First lets pre-load some mesh components.
-visii.mesh.create_sphere('m_0')
-visii.mesh.create_torus_knot('m_1')
-visii.mesh.create_teapotahedron('m_2')
-visii.mesh.create_box('m_3')
-visii.mesh.create_capped_cone('m_4')
-visii.mesh.create_capped_cylinder('m_5')
-visii.mesh.create_capsule('m_6')
-visii.mesh.create_cylinder('m_7')
-visii.mesh.create_disk('m_8')
-visii.mesh.create_dodecahedron('m_9')
-visii.mesh.create_icosahedron('m_10')
-visii.mesh.create_icosphere('m_11')
-visii.mesh.create_rounded_box('m_12')
-visii.mesh.create_spring('m_13')
-visii.mesh.create_torus('m_14')
-visii.mesh.create_tube('m_15')
-
-def add_random_obj(name = "name"):
-    # this function adds a random object that uses one of the pre-loaded mesh
-    # components, assigning a random pose and random material to that object.
-
-    obj = visii.entity.create(
-        name = name,
-        transform = visii.transform.create(name),
-        material = visii.material.create(name)
-    )
-
-    mesh_id = randint(0,15)
-
-    # set the mesh. (Note that meshes can be shared, saving memory)
-    mesh = visii.mesh.get(f'm_{mesh_id}')
-    obj.set_mesh(mesh)
-
-    obj.get_transform().set_position((
-        uniform(-5,5),
-        uniform(-5,5),
-        uniform(-1,3)
-    ))
-
-    obj.get_transform().set_rotation((
-        uniform(0,1), # X 
-        uniform(0,1), # Y
-        uniform(0,1), # Z
-        uniform(0,1)  # W
-    ))
-
-    s = uniform(0.05,0.15)
-    obj.get_transform().set_scale((
-        s,s,s
-    ))  
-
-    rgb = colorsys.hsv_to_rgb(
-        uniform(0,1),
-        uniform(0.7,1),
-        uniform(0.7,1)
-    )
-
-    obj.get_material().set_base_color(rgb)
-
-    mat = obj.get_material()
-    
-    # Some logic to generate "natural" random materials
-    material_type = randint(0,2)
-    
-    # Glossy / Matte Plastic
-    if material_type == 0:  
-        if randint(0,2): mat.set_roughness(uniform(.9, 1))
-        else           : mat.set_roughness(uniform(.0,.1))
-    
-    # Metallic
-    if material_type == 1:  
-        mat.set_metallic(uniform(0.9,1))
-        if randint(0,2): mat.set_roughness(uniform(.9, 1))
-        else           : mat.set_roughness(uniform(.0,.1))
-    
-    # Glass
-    if material_type == 2:  
-        mat.set_transmission(uniform(0.9,1))
-        
-        # controls outside roughness
-        if randint(0,2): mat.set_roughness(uniform(.9, 1))
-        else           : mat.set_roughness(uniform(.0,.1))
-        
-        # controls inside roughness
-        if randint(0,2): mat.set_transmission_roughness(uniform(.9, 1))
-        else           : mat.set_transmission_roughness(uniform(.0,.1))
-
-    mat.set_sheen(uniform(0,1)) # <- soft velvet like reflection near edges
-    mat.set_clearcoat(uniform(0,1)) # <- Extra, white, shiny layer. Good for car paint.    
-    if randint(0,1): mat.set_anisotropic(uniform(0.9,1)) # elongates highlights 
-
-    # (lots of other material parameters are listed in the docs)
-
-# Now, use the above function to make a bunch of random objects
-for i in range(opt.nb_objs):
-    add_random_obj(str(i))
-    print("\rcreating random object", i, end="")
-print(" - done!")
-
-visii.render_to_file(
-    width = opt.width, 
-    height = opt.height, 
-    samples_per_pixel = opt.spp,   
-    file_path = opt.out
+# Next, lets at an object (a floor).
+floor = visii.entity.create(
+    name = "floor",
+    mesh = visii.mesh.create_plane("mesh_floor"),
+    transform = visii.transform.create("transform_floor"),
+    material = visii.material.create("material_floor")
 )
+
+# Lets make our floor act as a mirror
+mat = floor.get_material()
+# mat = visii.material.get("material_floor") # <- this also works
+
+# Mirrors are smooth and "metallic".
+mat.set_base_color((0.19,0.16,0.19)) 
+mat.set_metallic(1) 
+mat.set_roughness(0)
+
+# Make the floor large by scaling it
+trans = floor.get_transform()
+trans.set_scale((5,5,1))
+
+# Let's also add a sphere
+sphere = visii.entity.create(
+    name="sphere",
+    mesh = visii.mesh.create_sphere("sphere"),
+    transform = visii.transform.create("sphere"),
+    material = visii.material.create("sphere")
+)
+sphere.get_transform().set_position((0,0,0.41))
+sphere.get_transform().set_scale((0.4, 0.4, 0.4))
+sphere.get_material().set_base_color((0.1,0.9,0.08))  
+sphere.get_material().set_roughness(0.7)   
+
+for i in range(opt.nb_frames):
+    # Now that we have a simple scene, let's render it 
+    visii.render_to_file(
+        width = opt.width, 
+        height = opt.height, 
+        samples_per_pixel = opt.spp,   
+        file_path = 'data/garlic' + str(i) + '.png'
+    )
 
 visii.deinitialize()
