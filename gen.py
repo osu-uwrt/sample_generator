@@ -110,6 +110,17 @@ obj_entity.get_material().set_sheen(1)
 # # # # # # # # # # # # # # # # # # # # # # # # #
 
 for i in range(opt.nb_frames):
+    obj_entity.get_transform().set_position((
+        uniform(-5,5),
+        uniform(0,-60),
+        uniform(-1,3)
+    ))
+    obj_entity.get_transform().set_rotation((
+        uniform(0,1), # X 
+        uniform(0,1), # Y
+        uniform(0,1), # Z
+        uniform(0,1)  # W
+    ))
     # Now that we have a simple scene, let's render it 
     visii.render_to_file(
         width = opt.width, 
@@ -117,10 +128,5 @@ for i in range(opt.nb_frames):
         samples_per_pixel = opt.spp,   
         file_path = 'data/garlic' + str(i) + '.png'
     )
-    obj_entity.get_transform().set_position((
-        uniform(-5,5),
-        uniform(-5,5),
-        uniform(-1,3)
-    ))
 
 visii.deinitialize()
