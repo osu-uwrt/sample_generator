@@ -363,13 +363,27 @@ def export_to_ndds_file(
 
 
 
-def image_grid(image, width, height):
-    h, w = image.shape[:2]
-    grid = np.zeros((height*h, width*w, 3))
-    for x in range(width):
-        for y in range(height):
-            grid[y*h:(y+1)*h, x*w:(x+1)*w] = image
-    return grid
+def make_background(image):
+    # Shrink negative to 400x400
+    SIZE = 400
+    image = cv2.resize(image, (SIZE, SIZE))
+
+    # Make background image that will wrap over dome
+    WIDTH = 1600
+    HEIGHT = 800
+    background = np.ones((HEIGHT, WIDTH, 3))
+
+    # Fill in the empty space with the average color of the negative image
+    background *= np.mean(image, axis=(0, 1)) 
+    # Normalize the color around the value 180 / 255
+    background *= 180 / (np.mean(image)+.0001)
+    # Drop our negative in the center
+    background[
+        HEIGHT // 2 - SIZE // 2 : HEIGHT // 2 + SIZE // 2,
+        WIDTH // 2 - SIZE // 2 : WIDTH // 2 + SIZE // 2
+    ] = image
+
+    return background
             
 
 # headless - no window
@@ -453,8 +467,13 @@ entities_to_export = [opt.entity + "_entity"]
 for i in tqdm(range(opt.nb_frames)):
     # load a random negtive onto the dome
     negative = cv2.imread(random.choice(negatives))
-    h, w = negative.shape[:2]
-    background = image_grid(negative, 5, 3)[h//2:-h//2, w//2:-w//2]
+
+    # Skip dark backgrounds (20/255)
+    if np.mean(negative) < 20:
+        continue
+
+    # Fix lighting of background and make it small within the FOV
+    background = make_background(negative)
     cv2.imwrite("test.png", background)
     dome = visii.texture.create_from_file("dome", "test.png")
     visii.set_dome_light_texture(dome)
