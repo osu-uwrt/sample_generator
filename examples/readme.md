@@ -1,4 +1,4 @@
-# ViSii examples
+# visii examples
 
 This folder contains different examples showing different capabilities for visii. 
 The first example uses interactive mode, whereas the rest of the examples 
