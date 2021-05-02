@@ -7,20 +7,28 @@ import numpy as np
 from tqdm import tqdm
 from squaternion import Quaternion
 import cv2
+import shutil
+import os
+from multiprocessing import Pool
+from math import ceil
 
 opt = lambda: None
-opt.spp = 50                   # How many rendering iterations per frame
+opt.spp = 50                  # How many rendering iterations per frame
 opt.width = 512                 # Size of frames
 opt.height = 512 
 opt.debug = False               # Output corners of the cuboid
-opt.nb_frames = 10              # Number of frames
-#opt.out = "/mnt/Data/visii_data/cutie/" # Where to output data
-opt.out = "temp/" # Where to output data
+opt.nb_frames = 20             # Number of frames
+# opt.out = "/mnt/Data/visii_data/cutie/" # Where to output data
+opt.out = "./temp/" # Where to output data
 opt.entity = "cutie"           # Name of entity to output
 opt.model = "./models/Cutie.obj" # Path to object file
 opt.test_percent = 5             # percent chance frame data exports to test folder
 
 # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+
+
 
 # converts 360 degree angles to Quaternions
 def euler_to_quaternion(yaw, pitch, roll):
@@ -373,163 +381,217 @@ def make_background(image):
     HEIGHT = 800
     background = np.ones((HEIGHT, WIDTH, 3))
 
+    # Randomize the color and brightness
+    average_color = np.mean(image, axis=(0, 1)) 
+    average_color *= np.random.uniform(.8, 1.2, size=3)
+    desired_brightness = np.random.uniform(84, 192)
+
     # Fill in the empty space with the average color of the negative image
-    background *= np.mean(image, axis=(0, 1)) 
-    # Normalize the color around the value 180 / 255
-    background *= 180 / (np.mean(image)+.0001)
+    background *= average_color
+    # Normalize the color to be the set brightness
+    background *= desired_brightness / (np.mean(image)+.0001)
     # Drop our negative in the center
     background[
         HEIGHT // 2 - SIZE // 2 : HEIGHT // 2 + SIZE // 2,
         WIDTH // 2 - SIZE // 2 : WIDTH // 2 + SIZE // 2
     ] = image
 
-    return background
+    return background.astype(np.uint8)
             
+# take list of frame ids and makes a frame in visii with that frame id
+def f(frame_ids):
+    # headless - no window
+    # verbose - output number of frames rendered, etc..
+    visii.initialize(headless = True, verbose = False)
 
-# headless - no window
-# verbose - output number of frames rendered, etc..
-visii.initialize(headless = True, verbose = False)
+    # Use a neural network to denoise ray traced
+    visii.enable_denoiser()
 
-# Use a neural network to denoise ray traced
-visii.enable_denoiser()
+    # set up dome background
+    negatives = list(glob.glob("negatives/*.jpg"))
+    visii.set_dome_light_intensity(1)
 
-# set up dome background
-negatives = list(glob.glob("negatives/*.jpg"))
-visii.set_dome_light_intensity(1)
+    # create an entity that will serve as our camera.
+    camera = visii.entity.create(name = "camera")
 
-# create an entity that will serve as our camera.
-camera = visii.entity.create(name = "camera")
+    # To place the camera into our scene, we'll add a "transform" component.
+    # (All visii objects have a "name" that can be used for easy lookup later.)
+    camera.set_transform(visii.transform.create(name = "camera_transform"))
 
-# To place the camera into our scene, we'll add a "transform" component.
-# (All visii objects have a "name" that can be used for easy lookup later.)
-camera.set_transform(visii.transform.create(name = "camera_transform"))
-
-# To make our camera entity act like a "camera", we'll add a camera component
-camera.set_camera(
-    visii.camera.create_from_fov(
-        name = "camera_camera", 
-        field_of_view = 1.4, # note, this is in radians
-        aspect = opt.width / float(opt.height)
+    # To make our camera entity act like a "camera", we'll add a camera component
+    camera.set_camera(
+        visii.camera.create_from_fov(
+            name = "camera_camera", 
+            field_of_view = 1.4, # note, this is in radians
+            aspect = opt.width / float(opt.height)
+        )
     )
-)
 
-# Finally, we'll select this entity to be the current camera entity.
-# (visii can only use one camera at the time)
-visii.set_camera_entity(camera)
-
-
-# lets store the camera look at information so we can export it
-camera_struct_look_at = {
-    'at':[0, 0, 0],
-    'up':[0, 0, 1],
-    'eye':[-1, 0, 0]
-}
-
-# Lets set the camera to look at an object. 
-# We'll do this by editing the transform component.
-camera.get_transform().look_at(
-    at = camera_struct_look_at['at'],
-    up = camera_struct_look_at['up'],
-    eye = camera_struct_look_at['eye']
-)
+    # Finally, we'll select this entity to be the current camera entity.
+    # (visii can only use one camera at the time)
+    visii.set_camera_entity(camera)
 
 
-# This function loads a mesh ignoring .mtl
-mesh = visii.mesh.create_from_file(opt.entity, opt.model)
+    # lets store the camera look at information so we can export it
+    camera_struct_look_at = {
+        'at':[0, 0, 0],
+        'up':[0, 0, 1],
+        'eye':[-1, 0, 0]
+    }
 
-# creates visii entity using loaded mesh
-obj_entity = visii.entity.create(
-    name= opt.entity + "_entity",
-    mesh = mesh,
-    transform = visii.transform.create(opt.entity + "_entity"),
-    material = visii.material.create(opt.entity + "_entity"),
-)
+    # Lets set the camera to look at an object. 
+    # We'll do this by editing the transform component.
+    camera.get_transform().look_at(
+        at = camera_struct_look_at['at'],
+        up = camera_struct_look_at['up'],
+        eye = camera_struct_look_at['eye']
+    )
 
 
+    # This function loads a mesh ignoring .mtl
+    mesh = visii.mesh.create_from_file(opt.entity, opt.model)
 
-# obj_entity.get_light().set_intensity(0.05)
+    # creates visii entity using loaded mesh
+    obj_entity = visii.entity.create(
+        name= opt.entity + "_entity",
+        mesh = mesh,
+        transform = visii.transform.create(opt.entity + "_entity"),
+        material = visii.material.create(opt.entity + "_entity"),
+    )
 
-# you can also set the light color manually
-# obj_entity.get_light().set_color((1,0,0))
+    # obj_entity.get_light().set_intensity(0.05)
 
-# Add texture to the material
-material = visii.material.get(opt.entity + "_entity")
-texture = visii.texture.create_from_file(opt.entity, "./models/Cutie.PNG")
-material.set_base_color_texture(texture)
+    # you can also set the light color manually
+    # obj_entity.get_light().set_color((1,0,0))
 
-# Lets add the cuboid to the object we want to export
-add_cuboid(opt.entity + "_entity", opt.debug)
+    # Add texture to the material
+    material = visii.material.get(opt.entity + "_entity")
+    texture = visii.texture.create_from_file(opt.entity, "./models/Cutie.PNG")
+    material.set_base_color_texture(texture)
 
-# lets keep track of the entities we want to export
-entities_to_export = [opt.entity + "_entity"]
+    # Lets add the cuboid to the object we want to export
+    add_cuboid(opt.entity + "_entity", opt.debug)
 
-# Loop where we change and render each frame
-for i in tqdm(range(opt.nb_frames)):
-    # load a random negtive onto the dome
-    negative = cv2.imread(random.choice(negatives))
+    # lets keep track of the entities we want to export
+    entities_to_export = [opt.entity + "_entity"]
 
-    # Skip dark backgrounds (20/255)
-    if np.mean(negative) < 20:
-        continue
+    # Loop where we change and render each frame
+    for i in tqdm(frame_ids):
+        # load a random negtive onto the dome
+        negative = cv2.imread(random.choice(negatives))
 
-    # Fix lighting of background and make it small within the FOV
-    background = make_background(negative)
-    cv2.imwrite("test.png", background)
-    dome = visii.texture.create_from_file("dome", "test.png")
-    visii.set_dome_light_texture(dome)
-    visii.set_dome_light_rotation(visii.angleAxis(visii.pi() * .5, visii.vec3(0, 0, 1)))
+        # Skip dark backgrounds (20/255)
+        if np.mean(negative) < 20:
+            continue
 
-    # create random rotation while making usre the entity is facing forward in each frame
-    rot = [
-        random.uniform(-10, 10), # Roll
-        random.uniform(-15, 15), # Pitch
-        random.uniform(-45, 45) # Yaw
-    ]
-    q = Quaternion.from_euler(rot[0], rot[1], rot[2], degrees=True)
+        # Fix lighting of background and make it small within the FOV
+        background = make_background(negative)
+        cv2.imwrite("test" + str(i) + ".png", background)
+        dome = visii.texture.create_from_file("dome", "test" + str(i) + ".png")
+        visii.set_dome_light_texture(dome)
+        visii.set_dome_light_rotation(visii.angleAxis(visii.pi() * .5, visii.vec3(0, 0, 1)))
 
-    position = [
-        random.uniform(0, 4), # X Depth
-        random.uniform(-1, 1),# Y 
-        random.uniform(-1, 1) # Z
-    ]
-    # Scale the position based on depth into image to make sure it remains in frame
-    position[1] *= position[0]
-    position[2] *= position[0]
+        stretch_factor = 2
+        scale = [
+            random.uniform(1,stretch_factor),  # width
+            random.uniform(1,stretch_factor),   # length
+            random.uniform(1,stretch_factor)   # height 
+        ]
+        obj_entity.get_transform().set_scale(scale)
+
+        # create random rotation while making usre the entity is facing forward in each frame
+        rot = [
+            random.uniform(-10, 10), # Roll
+            random.uniform(-15, 15), # Pitch
+            random.uniform(-45, 45) # Yaw
+        ]
+        q = Quaternion.from_euler(rot[0], rot[1], rot[2], degrees=True)
+
+        position = [
+            random.uniform(0, 4), # X Depth
+            random.uniform(-1, 1),# Y 
+            random.uniform(-1, 1) # Z
+        ]
+        # Scale the position based on depth into image to make sure it remains in frame
+        position[1] *= position[0]
+        position[2] *= position[0]
+        
+        obj_entity.get_transform().set_position(tuple(position))
+
+
+        obj_entity.get_transform().set_rotation((
+            q.x, q.y, q.z, q.w       
+        ))
+
+        # use random to make 95 % probability the frame data goes into training and
+        # 5% chance it goes in test folder
+        folder = ''
+        if random.randint(0,100) < opt.test_percent:
+            folder = opt.entity + '_test/'
+        else:
+            folder = opt.entity + '_training/'
+
+        # Render the scene
+        visii.render_to_file(
+            width = opt.width, 
+            height = opt.height, 
+            samples_per_pixel = opt.spp,   
+            file_path = opt.out + folder + opt.entity + str(i) + '.png'
+        )
+
+        # set up JSON    
+        export_to_ndds_file(
+            filename = opt.out + folder + opt.entity + str(i) + '.json',
+            obj_names = entities_to_export,
+            width=opt.width, 
+            height=opt.height, 
+            camera_struct = camera_struct_look_at
+        )
+
+        # remove current negative from the dome
+        visii.clear_dome_light_texture()
+        visii.texture.remove("dome")
+
+        os.remove("test" + str(i) + ".png")
+
+    visii.deinitialize()
+
+if __name__ == "__main__":
+    # clear the contents of training and test folders
+    dir_path = opt.out + opt.entity + "_test"
+
+    try:
+        shutil.rmtree(dir_path)
+    except OSError as e:
+        print("Error: %s : %s" % (dir_path, e.strerror))
+
+    try:
+        os.mkdir(dir_path)
+    except OSError:
+        print ("Creation of the directory %s failed" % path)
+
+    dir_path = opt.out + opt.entity + "_training"
+
+    try:
+        shutil.rmtree(dir_path)
+    except OSError as e:
+        print("Error: %s : %s" % (dir_path, e.strerror))
+
+    try:
+        os.mkdir(dir_path)
+    except OSError:
+        print ("Creation of the directory %s failed" % path)
+
+    # Start processes
+
+    l = list(range(opt.nb_frames))
+    nb_process = 6 
     
-    obj_entity.get_transform().set_position(tuple(position))
+    # How many frames each process should have 
+    n = ceil(len(l) / nb_process)
+    
+    # divide frames between processes
+    frame_groups = [l[i:i + n] for i in range(0, len(l), n)]
 
-
-    obj_entity.get_transform().set_rotation((
-        q.x, q.y, q.z, q.w       
-    ))
-
-    # use random to make 95 % probability the frame data goes into training and
-    # 5% chance it goes in test folder
-    folder = ''
-    if random.randint(0,100) < opt.test_percent:
-        folder = opt.entity + '_test/'
-    else:
-        folder = opt.entity + '_training/'
-
-    # Render the scene
-    visii.render_to_file(
-        width = opt.width, 
-        height = opt.height, 
-        samples_per_pixel = opt.spp,   
-        file_path = opt.out + folder + opt.entity + str(i) + '.png'
-    )
-
-    # set up JSON    
-    export_to_ndds_file(
-        filename = opt.out + folder + opt.entity + str(i) + '.json',
-        obj_names = entities_to_export,
-        width=opt.width, 
-        height=opt.height, 
-        camera_struct = camera_struct_look_at
-    )
-
-    # remove current negative from the dome
-    visii.clear_dome_light_texture()
-    visii.texture.remove("dome")
-
-visii.deinitialize()
+    with Pool(nb_process) as p:
+        p.map(f,frame_groups)
