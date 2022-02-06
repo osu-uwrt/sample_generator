@@ -12,21 +12,28 @@ import os
 from multiprocessing import Pool
 from math import ceil
 
+import colorsys
+
+
+
 opt = lambda: None
 opt.spp = 50                  # How many rendering iterations per frame
 opt.width = 512                 # Size of frames
 opt.height = 512 
 opt.debug = False               # Output corners of the cuboid
-opt.nb_frames = 20             # Number of frames
-# opt.out = "/mnt/Data/visii_data/cutie/" # Where to output data
+opt.nb_frames = 3          # Number of frames
+# opt.out = "/mnt/Data/visii_data/gman/" # Where to output data
 opt.out = "./temp/" # Where to output data
-opt.entity = "cutie"           # Name of entity to output
-opt.model = "./models/Cutie.obj" # Path to object file
+opt.entity = "gman"           # Name of entity to output
+opt.model = "./models/gman.obj" # Path to object file
 opt.test_percent = 5             # percent chance frame data exports to test folder
+opt.texture = './models/gman.PNG' # path to the object texture
 
+
+opt.nb_objs = 10 
 # # # # # # # # # # # # # # # # # # # # # # # # #
 
-
+#visii.mesh.create_sphere('rm_0')
 
 
 
@@ -41,7 +48,7 @@ def euler_to_quaternion(yaw, pitch, roll):
         return [qx, qy, qz, qw]
 
 # Function to add cuboid information to an object using 
-def add_cuboid(name, debug=False):
+def add_cuboid(name, debug=opt.debug):
     """
     Add cuboid children to the transform tree to a given object for exporting
 
@@ -90,7 +97,7 @@ def add_cuboid(name, debug=False):
     for i_p, p in enumerate(cuboid):
         child_transform = visii.transform.create(f"{name}_cuboid_{i_p}")
         child_transform.set_position(p)
-        child_transform.set_scale(visii.vec3(0.3))
+        child_transform.set_scale(visii.vec3(0.1))
         child_transform.set_parent(obj.get_transform())            
         if debug: 
             visii.entity.create(
@@ -367,6 +374,112 @@ def export_to_ndds_file(
 
 
 
+
+def add_random_obj(name_r = "name", pos=[float]):
+    # this function adds a random object that uses one of the pre-loaded mesh
+    # components, assigning a random pose and random material to that object.
+
+    
+
+    obj_random = visii.entity.create(
+        name = name_r,
+        transform = visii.transform.create(name_r),
+        material = visii.material.create(name_r)
+    )
+
+    mesh_id = random.randint(0,15)
+
+    # set the mesh. (Note that meshes can be shared, saving memory)
+    mesh_r = visii.mesh.get(f'rm_{mesh_id}')
+    obj_random.set_mesh(mesh_r)
+
+    # obj_random.get_transform().set_position((
+    #     random.uniform(-25,10),
+    #     random.uniform(-1,1),
+    #     random.uniform(-1,1)
+    # ))
+
+    x_not =pos[0]
+    y_not=pos[1]
+    z_not=pos[2]
+
+    
+   
+    position = [
+        random.uniform(-.25,10),
+        random.uniform(-1,1),
+        random.uniform(-1,1)
+  
+
+    ]
+
+    # Scale the position based on depth into image to make sure it remains in frame
+    position[1] *= position[0]
+    position[2] *= position[0]
+
+    obj_random.get_transform().set_position(tuple(position))
+
+    obj_random.get_transform().set_rotation((
+        random.uniform(0,1), # X 
+        random.uniform(0,1), # Y
+        random.uniform(0,1), # Z
+        random.uniform(0,1)  # W
+    ))
+
+    s = random.uniform(0.15, 0.2)
+    obj_random.get_transform().set_scale((
+        s,s,s
+    ))  
+
+    rgb = colorsys.hsv_to_rgb(
+        random.uniform(0,1),
+        random.uniform(0.7,1),
+        random.uniform(0.7,1)
+    )
+
+    obj_random.get_material().set_base_color(rgb)
+
+    mat = obj_random.get_material()
+    
+    # Some logic to generate "natural" random materials
+    material_type = random.randint(0,2)
+    
+    # Glossy / Matte Plastic
+    if material_type == 0:  
+        if random.randint(0,2): mat.set_roughness(random.uniform(.9, 1))
+        else           : mat.set_roughness(random.uniform(.0,.1))
+    
+    # Metallic
+    if material_type == 1:  
+        mat.set_metallic(random.uniform(0.9,1))
+        if random.randint(0,2): mat.set_roughness(random.uniform(.9, 1))
+        else           : mat.set_roughness(random.uniform(.0,.1))
+    
+    # Glass
+    if material_type == 2:  
+        mat.set_transmission(random.uniform(0.9,1))
+        
+        # controls outside roughness
+        if random.randint(0,2): mat.set_roughness(random.uniform(.9, 1))
+        else           : mat.set_roughness(random.uniform(.0,.1))
+        
+        # controls inside roughness
+        if random.randint(0,2): mat.set_transmission_roughness(random.uniform(.9, 1))
+        else           : mat.set_transmission_roughness(random.uniform(.0,.1))
+
+    mat.set_sheen(random.uniform(0,1)) # <- soft velvet like reflection near edges
+    mat.set_clearcoat(random.uniform(0,1)) # <- Extra, white, shiny layer. Good for car paint.    
+    if random.randint(0,1): mat.set_anisotropic(random.uniform(0.9,1)) # elongates highlights 
+
+    
+
+    # (lots of other material parameters are listed in the docs)
+
+
+
+
+
+
 # # # # # # # # # # # # # # # # # # # # # # # # #
 
 
@@ -404,6 +517,7 @@ def f(frame_ids):
     # verbose - output number of frames rendered, etc..
     visii.initialize(headless = True, verbose = False)
 
+   
     # Use a neural network to denoise ray traced
     visii.enable_denoiser()
 
@@ -432,6 +546,24 @@ def f(frame_ids):
     visii.set_camera_entity(camera)
 
 
+    #First lets pre-load some mesh components.
+    visii.mesh.create_sphere('rm_0')
+    visii.mesh.create_torus_knot('rm_1')
+    visii.mesh.create_teapotahedron('rm_2') 
+    visii.mesh.create_box('rm_3')
+    visii.mesh.create_capped_cone('rm_4')    
+    visii.mesh.create_capped_cylinder('rm_5')
+    visii.mesh.create_capsule('rm_6')
+    visii.mesh.create_cylinder('rm_7')
+    visii.mesh.create_disk('rm_8')  
+    visii.mesh.create_dodecahedron('rm_9')
+    visii.mesh.create_icosahedron('rm_10')
+    visii.mesh.create_icosphere('rm_11')
+    visii.mesh.create_rounded_box('rm_12')
+    visii.mesh.create_spring('rm_13')
+    visii.mesh.create_torus('rm_14')
+    visii.mesh.create_tube('rm_15')
+
     # lets store the camera look at information so we can export it
     camera_struct_look_at = {
         'at':[0, 0, 0],
@@ -449,6 +581,7 @@ def f(frame_ids):
 
 
     # This function loads a mesh ignoring .mtl
+    global mesh 
     mesh = visii.mesh.create_from_file(opt.entity, opt.model)
 
     # creates visii entity using loaded mesh
@@ -466,7 +599,7 @@ def f(frame_ids):
 
     # Add texture to the material
     material = visii.material.get(opt.entity + "_entity")
-    texture = visii.texture.create_from_file(opt.entity, "./models/Cutie.PNG")
+    texture = visii.texture.create_from_file(opt.entity, opt.texture)
     material.set_base_color_texture(texture)
 
     # Lets add the cuboid to the object we want to export
@@ -501,14 +634,15 @@ def f(frame_ids):
 
         # create random rotation while making usre the entity is facing forward in each frame
         rot = [
-            random.uniform(-10, 10), # Roll
-            random.uniform(-15, 15), # Pitch
-            random.uniform(-45, 45) # Yaw
+            random.uniform(0, 359), # Roll
+            random.uniform(-35, 35), # Pitch
+            random.uniform(-60,60) # Yaw
         ]
         q = Quaternion.from_euler(rot[0], rot[1], rot[2], degrees=True)
+        # q = Quaternion.from_euler(0, 0, 0, degrees=True)
 
         position = [
-            random.uniform(0, 4), # X Depth
+            random.uniform(-.25, 10), # X Depth
             random.uniform(-1, 1),# Y 
             random.uniform(-1, 1) # Z
         ]
@@ -522,6 +656,19 @@ def f(frame_ids):
         obj_entity.get_transform().set_rotation((
             q.x, q.y, q.z, q.w       
         ))
+
+        # TODO: Populate random shpaes in the world (We might have to check and make sure we are not generating a shape inside of gman or bootlegger)
+
+       
+        for k in range(3):
+            add_random_obj(str(k), position)
+            print("\rcreating random object ", 0, end="")
+        #add_random_obj(str(1),position)
+        #print("\rcreating random object ", 1, end="")
+        #print(" - done!")
+
+        
+       
 
         # use random to make 95 % probability the frame data goes into training and
         # 5% chance it goes in test folder
@@ -551,6 +698,8 @@ def f(frame_ids):
         # remove current negative from the dome
         visii.clear_dome_light_texture()
         visii.texture.remove("dome")
+
+        # TODO: Remove all the random shapes that just got loaded in
 
         os.remove("test" + str(i) + ".png")
 
